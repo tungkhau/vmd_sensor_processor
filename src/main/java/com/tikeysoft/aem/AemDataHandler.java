@@ -38,6 +38,7 @@ public class AemDataHandler {
     private boolean cutter = false;
     private boolean billetDetecting = false;
 
+
     private Instant lastDieTemp = Instant.now();
     private Instant lastBilletTemp = Instant.now();
     private Instant lastRampPressure = Instant.now();
@@ -175,6 +176,7 @@ public class AemDataHandler {
             // Process Semi profile value
             case "AE_01/signal/puller_A":
                 if (heartBeat && AemDataConverter.convertPullerA(hexString) && !cutter && now.isAfter(lastSemiProfileA.plusSeconds(productionInterval))) {
+                    System.out.println(heartBeat +" "+ AemDataConverter.convertPullerA(hexString) + " " + !cutter + " " + now.isAfter(lastSemiProfileA.plusSeconds(productionInterval)));
                     client.publish("processed/AE_01/production/semi_profile", new MqttMessage(semiProfileBCache.getBytes()));
                     lastSemiProfileA = now;
                 }

@@ -20,7 +20,7 @@ public class AemDataConverter {
     }
 
     public static int convertBilletWaste(String hexString) {
-        return hexToSignedDecimal(hexString.substring(0, 4)) - 1320;
+        return hexToSignedDecimal(hexString.substring(0, 4));
     }
 
     public static double convertSemiProfileA(String hexString) {
@@ -32,11 +32,11 @@ public class AemDataConverter {
     }
 
     public static boolean convertSignalStart(String hexString) {
-        return getBitFromHex(hexString.substring(4, 8), 9);
+        return getBitFromHex(hexString.substring(4, 8), 1);
     }
 
     public static boolean convertSignalEnd(String hexString) {
-        return getBitFromHex(hexString.substring(4, 8), 1);
+        return getBitFromHex(hexString.substring(4, 8), 9);
     }
 
     public static boolean convertBilletDetecting(String hexString) {
