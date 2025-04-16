@@ -12,23 +12,23 @@ public class AemDataConverter {
     }
 
     public static int convertRampPressure(String hexString) {
-        return hexToSignedDecimal(hexString.substring(0, 4));
+        return (hexToSignedDecimal(hexString.substring(0, 4)) - 4) * 25;
     }
 
-    public static int convertBillet(String hexString) {
-        return hexToSignedDecimal(hexString.substring(0, 4));
+    public static double convertBillet(String hexString) {
+        return (double) (hexToSignedDecimal(hexString.substring(0, 4))) /1000;
     }
 
-    public static int convertBilletWaste(String hexString) {
-        return hexToSignedDecimal(hexString.substring(0, 4));
+    public static double convertBilletWaste(String hexString) {
+        return (double) (hexToSignedDecimal(hexString.substring(0, 4)) - 1320) /1000;
     }
 
     public static double convertSemiProfileA(String hexString) {
-        return hexToUnsignedDecimal(hexString.substring(4, 8)) / (40.0 * 4) * 190;
+        return (hexToUnsignedDecimal(hexString.substring(4, 8)) / (40.0 * 4) * 190)/1000;
     }
 
     public static double convertSemiProfileB(String hexString) {
-        return hexToUnsignedDecimal(hexString.substring(4, 8)) / (40.0 * 4) * 190;
+        return (hexToUnsignedDecimal(hexString.substring(4, 8)) / (40.0 * 4) * 190)/1000;
     }
 
     public static boolean convertSignalStart(String hexString) {
