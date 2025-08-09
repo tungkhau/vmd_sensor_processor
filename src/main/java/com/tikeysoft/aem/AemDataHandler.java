@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class AemDataHandler {
     private MqttClient client;
     String clientId = "AemDataHandler";
+    String brokerUrl;
     String[] topics = {
             "AE_01/condition/die_temp",
             "AE_01/condition/billet_temp",
@@ -30,14 +31,13 @@ public class AemDataHandler {
             "AE_01/signal/billet_cutting"
     };
     private String billetCache = "0";
-    private String billetWasteCache ="0";
-    private String semiProfileACache ="0";
-    private String semiProfileBCache="0";
+    private String billetWasteCache = "0";
+    private String semiProfileACache = "0";
+    private String semiProfileBCache = "0";
 
     private boolean heartBeat = false;
     private boolean cutter = false;
     private boolean billetDetecting = false;
-
 
     private Instant lastDieTemp = Instant.now();
     private Instant lastBilletTemp = Instant.now();
@@ -48,154 +48,191 @@ public class AemDataHandler {
     private Instant lastSemiProfileA = Instant.now();
     private Instant lastSemiProfileB = Instant.now();
 
-    public void connectAndSubscribe(String broker) throws MqttException {
-        client = new MqttClient(broker, clientId);
-        MqttConnectOptions connOpts = new MqttConnectOptions();
-        connOpts.setCleanSession(true);
+    public void connectAndSubscribe(String broker) {
+        this.brokerUrl = broker;
 
-        client.setCallback(new MqttCallback() {
-            @Override
-            public void connectionLost(Throwable cause) {
-                System.out.println("Connection lost: " + cause.getMessage());
-            }
+        try {
+            client = new MqttClient(broker, clientId);
 
-            @Override
-            public void messageArrived(String topic, MqttMessage message) {
-                if (message.isRetained()) return;
-                String payload = new String(message.getPayload());
+            MqttConnectOptions connOpts = new MqttConnectOptions();
+            connOpts.setCleanSession(true);
+            connOpts.setAutomaticReconnect(true); // auto reconnect enabled
+            connOpts.setKeepAliveInterval(60);    // send ping every 60 seconds to avoid timeout
+            connOpts.setConnectionTimeout(30);    // 30 seconds max wait for connection
 
-                try {
-                    ObjectMapper mapper = new ObjectMapper();
-                    JsonNode json = mapper.readTree(payload);
-                    JsonNode data = json.get("data");
-
-                    if (data != null) {
-                        JsonNode payloadData = data.get("payload");
-
-                        if (payloadData != null) {
-                            payloadData.fields().forEachRemaining(entry -> {
-                                if (entry.getKey().contains("/iolinkmaster/port")) {
-                                    try {
-                                        JsonNode portData = entry.getValue();
-                                        String hexString = portData.get("data").asText();
-                                        convertData(topic, hexString);
-                                    } catch (Exception e) {
-                                        System.err.println("Error converting data for topic " + topic + ": " + e.getMessage());
-                                    }
-                                }
-                            });
-                        } else {
-                            System.out.println("Payload data is null for topic " + topic);
-                        }
-                    } else {
-                        System.out.println("Data is null for topic " + topic);
-                    }
-                } catch (Exception e) {
-                    System.err.println("Invalid message format for topic " + topic + ": " + e.getMessage());
+            client.setCallback(new MqttCallback() {
+                @Override
+                public void connectionLost(Throwable cause) {
+                    System.err.println("Connection lost: " + cause.getMessage());
+                    // AutoReconnect will handle reconnection
                 }
-            }
 
-            @Override
-            public void deliveryComplete(IMqttDeliveryToken token) {
-                // Not used in this example
-            }
-        });
+                @Override
+                public void messageArrived(String topic, MqttMessage message) {
+                    if (message.isRetained()) return;
 
-        System.out.println("Connecting to broker: " + broker);
-        client.connect(connOpts);
-        System.out.println("Connected");
+                    String payload = new String(message.getPayload());
 
-        for (String topic : topics) {
-            client.subscribe(topic);
-            System.out.println("Subscribed to topic: " + topic);
+                    try {
+                        ObjectMapper mapper = new ObjectMapper();
+                        JsonNode json = mapper.readTree(payload);
+                        JsonNode data = json.get("data");
+
+                        if (data != null) {
+                            JsonNode payloadData = data.get("payload");
+                            if (payloadData != null) {
+                                payloadData.fields().forEachRemaining(entry -> {
+                                    if (entry.getKey().contains("/iolinkmaster/port")) {
+                                        try {
+                                            JsonNode portData = entry.getValue();
+                                            String hexString = portData.get("data").asText();
+                                            convertData(topic, hexString);
+                                        } catch (Exception e) {
+                                            System.err.println("Error converting data for topic " + topic + ": " + e.getMessage());
+                                        }
+                                    }
+                                });
+                            } else {
+                                System.out.println("Payload data is null for topic " + topic);
+                            }
+                        } else {
+                            System.out.println("Data is null for topic " + topic);
+                        }
+                    } catch (Exception e) {
+                        System.err.println("Invalid message format for topic " + topic + ": " + e.getMessage());
+                    }
+                }
+
+                @Override
+                public void deliveryComplete(IMqttDeliveryToken token) {
+                    // Not used
+                }
+            });
+
+            System.out.println("Connecting to broker: " + broker);
+            client.connect(connOpts);
+            System.out.println("Connected");
+
+            subscribeTopics();
+
+        } catch (MqttException e) {
+            System.err.println("Error connecting: " + e.getMessage());
         }
     }
 
-    private void convertData(String topic, String hexString) throws MqttException {
-        Instant now = Instant.now();
-        int conditionInterval = 5;
-        int productionInterval = 30;
-        switch (topic) {
-            // Publish Condition values
-            case "AE_01/condition/die_temp":
-                if (heartBeat && now.isAfter(lastDieTemp.plusSeconds(conditionInterval))) {
-                    client.publish("processed/AE_01/condition/die_temp", new MqttMessage(String.valueOf(AemDataConverter.convertDieTemp(hexString)).getBytes()));
-                    lastDieTemp = now;
-                }
-                break;
-            case "AE_01/condition/billet_temp":
-                if (heartBeat && now.isAfter(lastBilletTemp.plusSeconds(conditionInterval))) {
-                    client.publish("processed/AE_01/condition/billet_temp", new MqttMessage(String.valueOf(AemDataConverter.convertBilletTemp(hexString)).getBytes()));
-                    lastBilletTemp = now;
-                }
-                break;
-            case "AE_01/condition/ramp_pressure":
-                if (heartBeat && now.isAfter(lastRampPressure.plusSeconds(conditionInterval))) {
-                    client.publish("processed/AE_01/condition/ramp_pressure", new MqttMessage(String.valueOf(AemDataConverter.convertRampPressure(hexString)).getBytes()));
-                    lastRampPressure = now;
-                }
-                break;
+    private void subscribeTopics() {
+        try {
+            for (String topic : topics) {
+                client.subscribe(topic);
+                System.out.println("Subscribed to topic: " + topic);
+            }
+        } catch (MqttException e) {
+            System.err.println("Subscription failed: " + e.getMessage());
+        }
+    }
 
-            // Store Signal values
-            case "AE_01/signal/heart_beat":
-                heartBeat = AemDataConverter.convertHeartBeat(hexString);
-                int heartBeatValue = heartBeat ? 1 : 0;
-                client.publish("processed/AE_01/signal/heart_beat", new MqttMessage(String.valueOf(heartBeatValue).getBytes()));
-                break;
-            case "AE_01/signal/cutter":
-                cutter = AemDataConverter.convertCutter(hexString);
-                break;
-            case "AE_01/signal/billet_detecting":
-                billetDetecting = AemDataConverter.convertBilletDetecting(hexString);
-                break;
+    private void convertData(String topic, String hexString) {
+        try {
+            Instant now = Instant.now();
+            int conditionInterval = 5;
+            int productionInterval = 30;
 
-            // Cache Production values
-            case "AE_01/production/billet":
-                billetCache = String.valueOf(AemDataConverter.convertBillet(hexString));
-                break;
-            case "AE_01/production/billet_waste":
-                billetWasteCache = String.valueOf(AemDataConverter.convertBilletWaste(hexString));
-                break;
-            case "AE_01/production/semi_profile_A":
-                semiProfileACache = String.valueOf(AemDataConverter.convertSemiProfileA(hexString));
-                break;
-            case "AE_01/production/semi_profile_B":
-                semiProfileBCache = String.valueOf(AemDataConverter.convertSemiProfileB(hexString));
-                break;
+            switch (topic) {
+                case "AE_01/condition/die_temp":
+                    if (heartBeat && now.isAfter(lastDieTemp.plusSeconds(conditionInterval))) {
+                        client.publish("processed/AE_01/condition/die_temp",
+                                new MqttMessage(String.valueOf(AemDataConverter.convertDieTemp(hexString)).getBytes()));
+                        lastDieTemp = now;
+                    }
+                    break;
 
-            // Process Billet value
-            case "AE_01/signal/billet_cutting":
-                if (billetDetecting && !AemDataConverter.convertBilletCutting(hexString) && now.isAfter(lastBillet.plusSeconds(productionInterval))) {
-                    client.publish("processed/AE_01/production/billet", new MqttMessage(billetCache.getBytes()));
-                    lastBillet = now;
-                }
-                break;
+                case "AE_01/condition/billet_temp":
+                    if (heartBeat && now.isAfter(lastBilletTemp.plusSeconds(conditionInterval))) {
+                        client.publish("processed/AE_01/condition/billet_temp",
+                                new MqttMessage(String.valueOf(AemDataConverter.convertBilletTemp(hexString)).getBytes()));
+                        lastBilletTemp = now;
+                    }
+                    break;
 
-            // Process Billet waste value
-            case "AE_01/signal/end":
-                if (AemDataConverter.convertSignalEnd(hexString) && now.isAfter(lastBilletWaste.plusSeconds(productionInterval))) {
-                    client.publish("processed/AE_01/production/billet_waste", new MqttMessage(billetWasteCache.getBytes()));
-                    lastBilletWaste = now;
-                }
-                break;
+                case "AE_01/condition/ramp_pressure":
+                    if (heartBeat && now.isAfter(lastRampPressure.plusSeconds(conditionInterval))) {
+                        client.publish("processed/AE_01/condition/ramp_pressure",
+                                new MqttMessage(String.valueOf(AemDataConverter.convertRampPressure(hexString)).getBytes()));
+                        lastRampPressure = now;
+                    }
+                    break;
 
-            // Process Semi profile value
-            case "AE_01/signal/puller_A":
-                if (heartBeat && AemDataConverter.convertPullerA(hexString) && !cutter && now.isAfter(lastSemiProfileA.plusSeconds(productionInterval))) {
-                    System.out.println(heartBeat +" "+ AemDataConverter.convertPullerA(hexString) + " " + !cutter + " " + now.isAfter(lastSemiProfileA.plusSeconds(productionInterval)));
-                    client.publish("processed/AE_01/production/semi_profile", new MqttMessage(semiProfileBCache.getBytes()));
-                    lastSemiProfileA = now;
-                }
-                break;
-            case "AE_01/signal/puller_B":
-                if (heartBeat && AemDataConverter.convertPullerB(hexString) && !cutter && now.isAfter(lastSemiProfileB.plusSeconds(productionInterval))) {
-                    client.publish("processed/AE_01/production/semi_profile", new MqttMessage(semiProfileACache.getBytes()));
-                    lastSemiProfileB = now;
-                }
-                break;
+                case "AE_01/signal/heart_beat":
+                    heartBeat = AemDataConverter.convertHeartBeat(hexString);
+                    int heartBeatValue = heartBeat ? 1 : 0;
+                    client.publish("processed/AE_01/signal/heart_beat",
+                            new MqttMessage(String.valueOf(heartBeatValue).getBytes()));
+                    break;
 
-            default:
-                throw new IllegalArgumentException("Unknown topic: " + topic);
+                case "AE_01/signal/cutter":
+                    cutter = AemDataConverter.convertCutter(hexString);
+                    break;
+
+                case "AE_01/signal/billet_detecting":
+                    billetDetecting = AemDataConverter.convertBilletDetecting(hexString);
+                    break;
+
+                case "AE_01/production/billet":
+                    billetCache = String.valueOf(AemDataConverter.convertBillet(hexString));
+                    break;
+
+                case "AE_01/production/billet_waste":
+                    billetWasteCache = String.valueOf(AemDataConverter.convertBilletWaste(hexString));
+                    break;
+
+                case "AE_01/production/semi_profile_A":
+                    semiProfileACache = String.valueOf(AemDataConverter.convertSemiProfileA(hexString));
+                    break;
+
+                case "AE_01/production/semi_profile_B":
+                    semiProfileBCache = String.valueOf(AemDataConverter.convertSemiProfileB(hexString));
+                    break;
+
+                case "AE_01/signal/billet_cutting":
+                    if (billetDetecting && !AemDataConverter.convertBilletCutting(hexString)
+                            && now.isAfter(lastBillet.plusSeconds(productionInterval))) {
+                        client.publish("processed/AE_01/production/billet", new MqttMessage(billetCache.getBytes()));
+                        lastBillet = now;
+                    }
+                    break;
+
+                case "AE_01/signal/end":
+                    if (AemDataConverter.convertSignalEnd(hexString)
+                            && now.isAfter(lastBilletWaste.plusSeconds(productionInterval))) {
+                        client.publish("processed/AE_01/production/billet_waste",
+                                new MqttMessage(billetWasteCache.getBytes()));
+                        lastBilletWaste = now;
+                    }
+                    break;
+
+                case "AE_01/signal/puller_A":
+                    if (heartBeat && AemDataConverter.convertPullerA(hexString) && !cutter
+                            && now.isAfter(lastSemiProfileA.plusSeconds(productionInterval))) {
+                        client.publish("processed/AE_01/production/semi_profile",
+                                new MqttMessage(semiProfileBCache.getBytes()));
+                        lastSemiProfileA = now;
+                    }
+                    break;
+
+                case "AE_01/signal/puller_B":
+                    if (heartBeat && AemDataConverter.convertPullerB(hexString) && !cutter
+                            && now.isAfter(lastSemiProfileB.plusSeconds(productionInterval))) {
+                        client.publish("processed/AE_01/production/semi_profile",
+                                new MqttMessage(semiProfileACache.getBytes()));
+                        lastSemiProfileB = now;
+                    }
+                    break;
+
+                default:
+                    System.out.println("Ignoring unknown topic: " + topic);
+            }
+        } catch (Exception e) {
+            System.err.println("Error processing topic " + topic + ": " + e.getMessage());
         }
     }
 }
