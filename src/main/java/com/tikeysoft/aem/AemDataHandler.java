@@ -135,6 +135,8 @@ public class AemDataHandler {
             // Store Signal values
             case "AE_01/signal/heart_beat":
                 heartBeat = AemDataConverter.convertHeartBeat(hexString);
+                int heartBeatValue = heartBeat ? 1 : 0;
+                client.publish("processed/AE_01/signal/heart_beat", new MqttMessage(String.valueOf(heartBeatValue).getBytes()));
                 break;
             case "AE_01/signal/cutter":
                 cutter = AemDataConverter.convertCutter(hexString);
