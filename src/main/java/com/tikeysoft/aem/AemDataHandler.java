@@ -60,34 +60,38 @@ public class AemDataHandler {
             }
 
             @Override
-            public void messageArrived(String topic, MqttMessage message) throws Exception {
+            public void messageArrived(String topic, MqttMessage message) {
                 if (message.isRetained()) return;
                 String payload = new String(message.getPayload());
 
-                ObjectMapper mapper = new ObjectMapper();
-                JsonNode json = mapper.readTree(payload);
-                JsonNode data = json.get("data");
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    JsonNode json = mapper.readTree(payload);
+                    JsonNode data = json.get("data");
 
-                if (data != null) {
-                    JsonNode payloadData = data.get("payload");
+                    if (data != null) {
+                        JsonNode payloadData = data.get("payload");
 
-                    if (payloadData != null) {
-                        payloadData.fields().forEachRemaining(entry -> {
-                            if (entry.getKey().contains("/iolinkmaster/port")) {
-                                JsonNode portData = entry.getValue();
-                                String hexString = portData.get("data").asText();
-                                try {
-                                    convertData(topic, hexString);
-                                } catch (MqttException e) {
-                                    throw new RuntimeException(e);
+                        if (payloadData != null) {
+                            payloadData.fields().forEachRemaining(entry -> {
+                                if (entry.getKey().contains("/iolinkmaster/port")) {
+                                    try {
+                                        JsonNode portData = entry.getValue();
+                                        String hexString = portData.get("data").asText();
+                                        convertData(topic, hexString);
+                                    } catch (Exception e) {
+                                        System.err.println("Error converting data for topic " + topic + ": " + e.getMessage());
+                                    }
                                 }
-                            }
-                        });
+                            });
+                        } else {
+                            System.out.println("Payload data is null for topic " + topic);
+                        }
                     } else {
-                        System.out.println("Payload data is null");
+                        System.out.println("Data is null for topic " + topic);
                     }
-                } else {
-                    System.out.println("Data is null");
+                } catch (Exception e) {
+                    System.err.println("Invalid message format for topic " + topic + ": " + e.getMessage());
                 }
             }
 
