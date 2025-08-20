@@ -38,6 +38,8 @@ public class AemDataHandler {
     private boolean heartBeat = false;
     private boolean cutter = false;
     private boolean billetDetecting = false;
+    private boolean pullerA = false;
+    private boolean pullerB = false;
 
     private Instant lastDieTemp = Instant.now();
     private Instant lastBilletTemp = Instant.now();
@@ -170,7 +172,16 @@ public class AemDataHandler {
                     break;
 
                 case "AE_01/signal/cutter":
-                    cutter = AemDataConverter.convertCutter(hexString);
+                    if (!AemDataConverter.convertCutter(hexString)) {
+                        if (pullerA && heartBeat && now.isAfter(lastSemiProfileB.plusSeconds(productionInterval))) {
+                            client.publish("processed/AE_01/production/semi_profile", new MqttMessage(semiProfileACache.getBytes()));
+                            lastSemiProfileB = now;
+                        }
+                        if (pullerB && heartBeat && now.isAfter(lastSemiProfileB.plusSeconds(productionInterval))) {
+                            client.publish("processed/AE_01/production/semi_profile", new MqttMessage(semiProfileBCache.getBytes()));
+                            lastSemiProfileA = now;
+                        }
+                    }
                     break;
 
                 case "AE_01/signal/billet_detecting":
@@ -211,21 +222,11 @@ public class AemDataHandler {
                     break;
 
                 case "AE_01/signal/puller_A":
-                    if (heartBeat && AemDataConverter.convertPullerA(hexString) && !cutter
-                            && now.isAfter(lastSemiProfileA.plusSeconds(productionInterval))) {
-                        client.publish("processed/AE_01/production/semi_profile",
-                                new MqttMessage(semiProfileBCache.getBytes()));
-                        lastSemiProfileA = now;
-                    }
+                    pullerA = AemDataConverter.convertPullerA(hexString);
                     break;
 
                 case "AE_01/signal/puller_B":
-                    if (heartBeat && AemDataConverter.convertPullerB(hexString) && !cutter
-                            && now.isAfter(lastSemiProfileB.plusSeconds(productionInterval))) {
-                        client.publish("processed/AE_01/production/semi_profile",
-                                new MqttMessage(semiProfileACache.getBytes()));
-                        lastSemiProfileB = now;
-                    }
+                    pullerB = AemDataConverter.convertPullerB(hexString);
                     break;
 
                 default:
