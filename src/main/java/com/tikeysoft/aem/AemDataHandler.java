@@ -47,8 +47,9 @@ public class AemDataHandler {
 
     private Instant lastBillet = Instant.now();
     private Instant lastBilletWaste = Instant.now();
-    private Instant lastSemiProfileA = Instant.now();
-    private Instant lastSemiProfileB = Instant.now();
+    private Instant lastSemiProfile = Instant.now();
+
+    private Instant lastHeartBeat = Instant.now();
 
     public void connectAndSubscribe(String broker) {
         this.brokerUrl = broker;
@@ -136,6 +137,7 @@ public class AemDataHandler {
     private void convertData(String topic, String hexString) {
         try {
             Instant now = Instant.now();
+            int signalInterval = 1;
             int conditionInterval = 5;
             int productionInterval = 30;
 
@@ -167,19 +169,22 @@ public class AemDataHandler {
                 case "AE_01/signal/heart_beat":
                     heartBeat = AemDataConverter.convertHeartBeat(hexString);
                     int heartBeatValue = heartBeat ? 1 : 0;
-                    client.publish("processed/AE_01/signal/heart_beat",
-                            new MqttMessage(String.valueOf(heartBeatValue).getBytes()));
+                    if (now.isAfter(lastHeartBeat.plusSeconds(signalInterval))) {
+                        client.publish("processed/AE_01/signal/heart_beat",
+                                new MqttMessage(String.valueOf(heartBeatValue).getBytes()));
+                        lastHeartBeat = now;
+                    }
                     break;
 
                 case "AE_01/signal/cutter":
                     if (!AemDataConverter.convertCutter(hexString)) {
-                        if (pullerA && heartBeat && now.isAfter(lastSemiProfileB.plusSeconds(productionInterval))) {
-                            client.publish("processed/AE_01/production/semi_profile", new MqttMessage(semiProfileACache.getBytes()));
-                            lastSemiProfileB = now;
-                        }
-                        if (pullerB && heartBeat && now.isAfter(lastSemiProfileB.plusSeconds(productionInterval))) {
+                        if (pullerA && heartBeat && now.isAfter(lastSemiProfile.plusSeconds(productionInterval))) {
                             client.publish("processed/AE_01/production/semi_profile", new MqttMessage(semiProfileBCache.getBytes()));
-                            lastSemiProfileA = now;
+                            lastSemiProfile = now;
+                        }
+                        if (pullerB && heartBeat && now.isAfter(lastSemiProfile.plusSeconds(productionInterval))) {
+                            client.publish("processed/AE_01/production/semi_profile", new MqttMessage(semiProfileACache.getBytes()));
+                            lastSemiProfile = now;
                         }
                     }
                     break;
