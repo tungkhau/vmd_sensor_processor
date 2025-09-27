@@ -169,11 +169,8 @@ public class AemDataHandler {
                 case "AE_01/signal/heart_beat":
                     heartBeat = AemDataConverter.convertHeartBeat(hexString);
                     int heartBeatValue = heartBeat ? 1 : 0;
-                    if (now.isAfter(lastHeartBeat.plusSeconds(signalInterval))) {
-                        client.publish("processed/AE_01/signal/heart_beat",
-                                new MqttMessage(String.valueOf(heartBeatValue).getBytes()));
-                        lastHeartBeat = now;
-                    }
+                    client.publish("processed/AE_01/signal/heart_beat",
+                            new MqttMessage(String.valueOf(heartBeatValue).getBytes()));
                     break;
 
                 case "AE_01/signal/cutter":
